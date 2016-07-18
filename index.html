@@ -1,5 +1,12 @@
 <!doctype html><meta charset=utf-8><title> Spacetime Locator </title>
+<style>
+#noGeolocNode { display: none; }
+</style>
 <output id=spashNode>Computing...</output>
+<p id=precisionNode></p>
+<p id=noGeolocNode>
+  Your device does not allow access to geolocation data. Using a default location.
+</p>
 <p id=warningsNode></p>
 
 <script src=./spash.js></script>
@@ -14,7 +21,17 @@
     accuracyWarnings(sh, geo);
   };
   var noGeolocWarning = function() {
-    warningsNode.innerHTML = 'Your device does not allow access to geolocation data.';
+    noGeolocNode.style.display = 'block';
+    var defaultGeo = {
+      coords: {
+        latitude: 51.5221656,
+        longitude: -0.1086239,
+        altitude: 22.725,
+        accuracy: 2,
+        altitudeAccuracy: 1e-9,
+      },
+    };
+    setGeoloc(defaultGeo);
   };
   navigator.geolocation.getCurrentPosition(setGeoloc, noGeolocWarning, {
     enableHighAccuracy: true,
@@ -23,6 +40,13 @@
   });
 
   var accuracyWarnings = function(spash, geo) {
+    var accuracies = [
+      '± ' + spash.latError + ' meters (latitude)',
+      '± ' + spash.longError + ' meters (longitude)',
+      '± ' + spash.altError + ' meters (altitude)',
+    ];
+    precisionNode.innerHTML = accuracies.join('<br>');
+
     var geoAccuracy = geo.coords.accuracy || Infinity;  // meters
     var altAccuracy = (geo.coords.altitudeAccuracy) || Infinity;
     var warn = [];
