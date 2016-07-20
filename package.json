@@ -1,0 +1,25 @@
+{
+  "name": "spash",
+  "version": "1.0.0",
+  "description": "Universal spacetime locator. Maps every location in the observable universe to a string.",
+  "main": "spash.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espadrine/spash.git"
+  },
+  "keywords": [
+    "Geohash",
+    "latitude",
+    "longitude",
+    "altitude"
+  ],
+  "author": "Thaddée Tyl",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/espadrine/spash/issues"
+  },
+  "homepage": "https://github.com/espadrine/spash#readme"
+}
