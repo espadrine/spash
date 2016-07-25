@@ -4,6 +4,8 @@
 </style>
 <h1> Spash: Spacetime Locator </h1>
 <output id=spashNode>Computing...</output>
+<input type=button id=addDigitNode value='+'>
+<input type=button id=rmDigitNode value='-'>
 <p id=precisionNode></p>
 <p id=noGeolocNode>
   Your device does not allow access to geolocation data. Using a default location.
@@ -13,9 +15,10 @@
 <script src=./spash.js></script>
 <script>
   var geoloc;
+  var digits = 11;
   var setGeoloc = function(geo) {
     geoloc = geo;
-    var sh = spash(geo, 11);
+    var sh = spash(geo, digits);
     console.dir(geo);
     console.dir(sh);
     spashNode.value = sh.hash;
@@ -62,4 +65,16 @@
 
     warningsNode.innerHTML = warn.join('<br>');
   };
+
+  var addDigit = function(event) {
+    digits++;
+    setGeoloc(geoloc);
+  };
+  var rmDigit = function(event) {
+    if (digits <= 0) { return; }
+    digits--;
+    setGeoloc(geoloc);
+  };
+  addDigitNode.addEventListener('click', addDigit);
+  rmDigitNode.addEventListener('click', rmDigit);
 </script>
