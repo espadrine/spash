@@ -3,9 +3,10 @@
 #noGeolocNode { display: none; }
 </style>
 <h1> Spash: Spacetime Locator </h1>
-<output id=spashNode>Computing...</output>
+<output id=spashNode>Computing…</output><br>
 <input type=button id=addDigitNode value='+'>
 <input type=button id=rmDigitNode value='-'>
+<p id=geolocNode></p>
 <p id=precisionNode></p>
 <p id=noGeolocNode>
   Your device does not allow access to geolocation data. Using a default location.
@@ -19,9 +20,8 @@
   var setGeoloc = function(geo) {
     geoloc = geo;
     var sh = spash(geo, digits);
-    console.dir(geo);
-    console.dir(sh);
     spashNode.value = sh.hash;
+    showGeoloc();
     accuracyWarnings(sh, geo);
   };
   var noGeolocWarning = function() {
@@ -42,6 +42,14 @@
     timeout: 25000,
     maximumAge: 0
   });
+
+  var showGeoloc = function() {
+    geolocNode.innerHTML = [
+      'Latitude: ' + geoloc.coords.latitude,
+      'Longitude: ' + geoloc.coords.longitude,
+      'Altitude: ' + geoloc.coords.altitude,
+    ].join('<br>');
+  };
 
   var accuracyWarnings = function(spash, geo) {
     var accuracies = [
