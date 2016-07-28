@@ -7,11 +7,17 @@
     factory(exports);
   } else {
     // Browser globals
-    factory(root);
+    factory(root.spash = {});
   }
 }(this, function (exports) {
 
   var base64url = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  var base64urlChar = Object.create(null);
+  (function() {
+    for (var i = 0; i < base64url.length; i++) {
+      base64urlChar[base64url[i]] = i;
+    }
+  }());
 
   var midpoint = function(low, high) {
     return +low + (+high - low) / 2;
@@ -29,6 +35,10 @@
   };
 
   var earthRadius = 6371000;  // meters
+
+  var utcEpochSeconds = function() {
+    return ((Date.now() / 1000) >>> 0);
+  };
 
   var longitudeMeterError = function(longErr, radius, lat) {
     var cos = Math.cos(lat * Math.PI / 180);
@@ -55,26 +65,40 @@
     return [low, high];
   };
 
-  var spash = function(geo, nchar) {
-    var long = geo.coords.longitude;  // degree
+  // Reverse bisect.
+  var rbisect = function(low, high, bits, bitsLen) {
+    var target = midpoint(low, high);
+    for (var i = 0; i < bitsLen; i++) {
+      if (bits[i] === 1) {
+        low = target;
+      } else {
+        high = target;
+      }
+      target = midpoint(low, high);
+    }
+    return target;
+  };
+
+  var encode = function(geo, nchar) {
     var lat = geo.coords.latitude;  // degree
+    var long = geo.coords.longitude;  // degree
     var alt = (geo.coords.altitude) || 0;  // metres
     var sigalt = sigmoid(alt / 1e3);  // km
     var timestamp = geo.timestamp;  // seconds
 
     // Each character is a 6-bit number.
     nchar = +nchar;
-    var longBitsLen = nchar * 2, latBitsLen = nchar * 2, altBitsLen = nchar * 2;
-    var longBits = new Array(longBitsLen);
+    var latBitsLen = nchar * 2, longBitsLen = nchar * 2, altBitsLen = nchar * 2;
     var latBits = new Array(latBitsLen);
+    var longBits = new Array(longBitsLen);
     var altBits = new Array(altBitsLen);
 
     // Generate bits for longitude, latitude, altitude.
-    var longRange = bisect(long, -180, 180, longBits, longBitsLen);
     var latRange = bisect(lat, -90, 90, latBits, latBitsLen);
+    var longRange = bisect(long, -180, 180, longBits, longBitsLen);
     var altRange = bisect(sigalt, -1, 1, altBits, altBitsLen);
-    var longErr = (longRange[1] - longRange[0]) / 2;
     var latErr = (latRange[1] - latRange[0]) / 2;
+    var longErr = (longRange[1] - longRange[0]) / 2;
     var altErr = (asig(altRange[1]) - asig(altRange[0])) / 2 * 1e3;  // metres
 
     // Order bits.
@@ -104,12 +128,60 @@
     }
 
     return {
+      // FIXME: detect planet.
       hash: 'E:' + hash,
-      longError: longitudeMeterError(longErr, earthRadius + alt, lat),
       latError: latitudeMeterError(latErr, earthRadius + alt),
+      longError: longitudeMeterError(longErr, earthRadius + alt, lat),
       altError: altErr,
     };
   };
 
-  exports.spash = spash;
+  // {coords: {latitude, longitude, altitude}, timestamp in seconds}
+  var decode = function(spash) {
+    var parts = spash.split(':');
+    // FIXME: detect planet.
+    var location = parts[1];
+
+    // Convert characters to integers.
+    var ints = new Array(location.length);
+    for (var i = 0; i < location.length; i++) {
+      ints[i] = base64urlChar[location[i]];
+    }
+
+    // Convert integers to bits.
+    var intsLen = ints.length;
+    var locBitsLen = intsLen * 2;
+    var latBits = new Array(locBitsLen);
+    var longBits = new Array(locBitsLen);
+    var altBits = new Array(locBitsLen);
+    for (var i = 0; i < intsLen; i++) {
+      var double = i * 2;
+      longBits[double + 0] = (ints[i] & 32) >> 5;
+      latBits [double + 0] = (ints[i] & 16) >> 4;
+      altBits [double + 0] = (ints[i] & 8)  >> 3;
+      longBits[double + 1] = (ints[i] & 4)  >> 2;
+      latBits [double + 1] = (ints[i] & 2)  >> 1;
+      altBits [double + 1] = (ints[i] & 1)  >> 0;
+    }
+    console.log(ints.map(i => i.toString(2)))
+    console.log(longBits)
+
+    // Extract longitude, latitude, altitude.
+    var lat = rbisect(-90, 90, latBits, locBitsLen);
+    var long = rbisect(-180, 180, longBits, locBitsLen);
+    var sigalt = rbisect(-1, 1, altBits, locBitsLen);
+    var alt = asig(sigalt) * 1e3;  // metres
+
+    return {
+      coords: {
+        latitude: lat,
+        longitude: long,
+        altitude: alt,
+      },
+      timestamp: utcEpochSeconds(),
+    };
+  };
+
+  exports.encode = encode;
+  exports.decode = decode;
 }));
