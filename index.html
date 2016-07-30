@@ -6,6 +6,7 @@
 <output id=spashNode>Computing…</output><br>
 <input type=button id=addDigitNode value='+'>
 <input type=button id=rmDigitNode value='-'>
+<input type=button id=editNode value='Edit'>
 <p id=geolocNode></p>
 <p id=precisionNode></p>
 <p id=noGeolocNode>
@@ -19,7 +20,7 @@
   var digits = 11;
   var setGeoloc = function(geo) {
     geoloc = geo;
-    var sh = spash(geo, digits);
+    var sh = spash.encode(geo, digits);
     spashNode.value = sh.hash;
     showGeoloc();
     accuracyWarnings(sh, geo);
@@ -83,6 +84,11 @@
     digits--;
     setGeoloc(geoloc);
   };
+  var edit = function(event) {
+    var newSpash = prompt('Enter a spash.');
+    setGeoloc(spash.decode(newSpash));
+  };
   addDigitNode.addEventListener('click', addDigit);
   rmDigitNode.addEventListener('click', rmDigit);
+  editNode.addEventListener('click', edit);
 </script>
