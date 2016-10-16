@@ -129,7 +129,7 @@
 
     return {
       // FIXME: detect planet.
-      hash: 'E:' + hash,
+      hash: 'E.' + hash,
       latError: latitudeMeterError(latErr, earthRadius + alt),
       longError: longitudeMeterError(longErr, earthRadius + alt, lat),
       altError: altErr,
@@ -138,7 +138,7 @@
 
   // {coords: {latitude, longitude, altitude}, timestamp in seconds}
   var decode = function(spash) {
-    var parts = spash.split(':');
+    var parts = spash.split('.');
     // FIXME: detect planet.
     var location = parts[1];
 

@@ -2,9 +2,9 @@
 
 Maps every location in the observable universe to a string of the form:
 
-    <Origin>:<Hash>
+    <Origin>.<Hash>
 
-(Example: `E:6BLH4goVfxs`.)
+(Example: `E.6BLH4goVfxs`.)
 
 - Origin: IAU designation of a celestial object, percent-encoded as per reg-name
   syntax in [RFC 3986][]; eg. `E` for Earth.
