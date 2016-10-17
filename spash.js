@@ -36,10 +36,6 @@
 
   var earthRadius = 6371000;  // meters
 
-  var utcEpochSeconds = function() {
-    return ((Date.now() / 1000) >>> 0);
-  };
-
   var longitudeMeterError = function(longErr, radius, lat) {
     var cos = Math.cos(lat * Math.PI / 180);
     var haversine = (1 - Math.cos(longErr * Math.PI / 180)) / 2;
@@ -79,12 +75,13 @@
     return target;
   };
 
-  var encode = function(geo, nchar) {
-    var lat = geo.coords.latitude;  // degree
-    var long = geo.coords.longitude;  // degree
-    var alt = (geo.coords.altitude) || 0;  // metres
+  // Take {latitude, longitude, altitude} information in degrees and metre.
+  // Return a geoloc hash.
+  var encodeGeoloc = function(coords, nchar) {
+    var lat = coords.latitude;  // degree
+    var long = coords.longitude;  // degree
+    var alt = coords.altitude || 0;  // metres
     var sigalt = sigmoid(alt / 1e3);  // km
-    var timestamp = geo.timestamp;  // seconds
 
     // Each character is a 6-bit number.
     nchar = +nchar;
@@ -128,20 +125,65 @@
     }
 
     return {
-      // FIXME: detect planet.
-      hash: 'E.' + hash,
+      hash: hash,
       latError: latitudeMeterError(latErr, earthRadius + alt),
       longError: longitudeMeterError(longErr, earthRadius + alt, lat),
       altError: altErr,
     };
   };
 
-  // {coords: {latitude, longitude, altitude}, timestamp in seconds}
-  var decode = function(spash) {
-    var parts = spash.split('.');
-    // FIXME: detect planet.
-    var location = parts[1];
+  // Take a Unix timestamp. Return a time hash.
+  var encodeTime = function(utc, nchar) {
+    var time = tcgFromUtc(utc);
+    var sigtime = sigmoid(time / timeHashPeriod);
 
+    // Each character is a 6-bit number.
+    nchar = +nchar;
+    var bitsLen = nchar * 6;
+    var bits = new Array(bitsLen);
+
+    // Generate bits for longitude, latitude, altitude.
+    var range = bisect(sigtime, -1, 1, bits, bitsLen);
+    var err = (asig(range[1]) - asig(range[0])) / 2
+      * timeHashPeriod;
+
+    // Convert bits to integers.
+    var ints = new Array(nchar);
+    for (var i = 0; i < bitsLen; i += 6) {
+      ints[(i / 6) >>> 0] = (bits[i] << 5) + (bits[i + 1] << 4) + (bits[i + 2] << 3) +
+                        (bits[i + 3] << 2) + (bits[i + 4] << 1) + (bits[i + 5]);
+    }
+
+    // Convert integers to characters.
+    var hash = '';
+    for (var i = 0; i < nchar; i++) {
+      hash += base64url[ints[i]];
+    }
+
+    return {hash: hash, error: err}
+  };
+
+  var encode = function(geo, nchar, timeNchar) {
+    timeNchar = timeNchar || nchar;
+    var geoloc = encodeGeoloc(geo.coords, nchar);
+    var time = encodeTime(geo.timestamp / 1000, timeNchar);
+    var celestialObj = 'E';  // FIXME: detect planet.
+
+    return {
+      hash: celestialObj + '.' + geoloc.hash + '.' + time.hash,
+      geolocHash: geoloc.hash,
+      timeHash: time.hash,
+      iau: celestialObj,
+      latError: geoloc.latError,
+      longError: geoloc.longError,
+      altError: geoloc.altError,
+      timeError: time.error,
+    };
+  };
+
+  // location: String of the form "ek0uvhuQ4AA".
+  // Return an array of bits.
+  var decodeGeoloc = function(location) {
     // Convert characters to integers.
     var ints = new Array(location.length);
     for (var i = 0; i < location.length; i++) {
@@ -163,8 +205,6 @@
       latBits [double + 1] = (ints[i] & 2)  >> 1;
       altBits [double + 1] = (ints[i] & 1)  >> 0;
     }
-    console.log(ints.map(i => i.toString(2)))
-    console.log(longBits)
 
     // Extract longitude, latitude, altitude.
     var lat = rbisect(-90, 90, latBits, locBitsLen);
@@ -173,15 +213,127 @@
     var alt = asig(sigalt) * 1e3;  // metres
 
     return {
-      coords: {
-        latitude: lat,
-        longitude: long,
-        altitude: alt,
-      },
-      timestamp: utcEpochSeconds(),
+      latitude: lat,
+      longitude: long,
+      altitude: alt,
+    };
+  };
+
+  var timeHashPeriod = 0xffffffff;  // 2^32-1 sec, ~136 years
+
+  // Unix timestamp in milliseconds, ie number of milliseconds since
+  // 1970-01-01T00:00:00Z with leap seconds ignored.
+  var unixTimestampMs = function() { return Date.now(); };
+
+  // Constant difference in the rate between TT and TCG.
+  var LG = 6.969290134e-10;
+  // TCG timestamp of Julian Date 2443144.5003725.
+  // That is the moment when TAI started accounting for gravitational time
+  // dilation.
+  // It corresponds to TAI 1977-01-01T00:00:00.000 (6 leap seconds from UTC), so
+  // new Date('1977-01-01T00:00:00.000Z') / 1000 + 6 + 32.184
+  var julianTcgTaiCorrection = 220924838.184;
+
+  // Unix timestamps of the instant just after the end of a leap second.
+  var leapSeconds = [
+    78796800, 94694400, 126230400, 157766400, 189302400, 220924800, 252460800,
+    283996800, 315532800, 362793600, 394329600, 425865600, 489024000, 567993600,
+    631152000, 662688000, 709948800, 741484800, 773020800, 820454400, 867715200,
+    915148800, 1136073600, 1230768000, 1341100800, 1435708800, 1483228800
+  ];
+
+  var leapSecondsTai = leapSeconds.map(function(leap, i) { return leap + i; });
+
+  // tai: TAI time in seconds since the Unix Epoch.
+  // Returns the number of UTC leap seconds since that TAI time.
+  var leapSecondsSinceTai = function(tai) {
+    for (var i = 0; i < leapSecondsTai.length; i++) {
+      if (tai < leapSecondsTai[i]) {break;}
+    }
+    return i;
+  };
+
+  // utc: Unix timestamp.
+  // Returns the number of UTC leap seconds since that time.
+  var leapSecondsSinceUtc = function(utc) {
+    for (var i = 0; i < leapSeconds.length; i++) {
+      if (utc < leapSeconds[i]) {break;}
+    }
+    return i;
+  };
+
+  // Convert a TCG timestamp (number of seconds since Unix epoch in TCG) to a
+  // Unix timestamp.
+  var utcFromTcg = function(tcg) {
+    // Convert TCG to TT, and TT to TAI.
+    var daysSinceTaiCorrection = (tcg - julianTcgTaiCorrection) / 24 / 3600;
+    var tt = tcg - LG * daysSinceTaiCorrection * 86400;
+    var tai = tt - 32.184;
+    // Convert TAI to UTC.
+    var utc = tai - leapSecondsSinceTai(tai) - 10;
+    return utc;
+  };
+
+  var tcgFromUtc = function(utc) {
+    // Convert UTC to TAI.
+    var tai = utc + leapSecondsSinceUtc(utc) + 10;
+    // Convert TAI to TT, then to TCG.
+    var tt = tai + 32.184;
+    // The TCG timestamp of the TAI correction date is identical to the TT one.
+    var daysSinceTaiCorrection = (tt - julianTcgTaiCorrection) / 24 / 3600;
+    var tcg = tt + LG * daysSinceTaiCorrection * 86400;
+    return tcg;
+  };
+
+  // Take something of the form "ek0", return a Unix timestamp in milliseconds.
+  var decodeTime = function(time) {
+    // Convert characters to integers.
+    var ints = new Array(time.length);
+    for (var i = 0; i < time.length; i++) {
+      ints[i] = base64urlChar[time[i]];
+    }
+
+    // Convert integers to bits.
+    var intsLen = ints.length;
+    var bitsLen = intsLen * 6;
+    var bits = new Array(bitsLen);
+    for (var i = 0, j = 0; i < intsLen; i++, j += 6) {
+      bits[j + 0] = (ints[i] & 32) >> 5;
+      bits[j + 1] = (ints[i] & 16) >> 4;
+      bits[j + 2] = (ints[i] & 8)  >> 3;
+      bits[j + 3] = (ints[i] & 4)  >> 2;
+      bits[j + 4] = (ints[i] & 2)  >> 1;
+      bits[j + 5] = (ints[i] & 1)  >> 0;
+    }
+
+    var sigtime = rbisect(-1, 1, bits, bitsLen);
+    // Timestamp in TCG time.
+    var timestampTcg = asig(sigtime) * timeHashPeriod;
+    return utcFromTcg(timestampTcg) * 1000;
+  };
+
+  // {coords: {latitude, longitude, altitude}, timestamp in seconds}
+  var decode = function(spash) {
+    var parts = spash.split('.');
+    // FIXME: detect planet.
+    var location = parts[1];
+    var time = parts[2];  // optional
+
+    var coords = decodeGeoloc(location);
+    if (time !== undefined) {
+      var timestamp = decodeTime(time);
+    } else {
+      var timestamp = unixTimestampMs();
+    }
+
+    return {
+      coords: coords,
+      timestamp: timestamp,
     };
   };
 
   exports.encode = encode;
+  exports.encodeTime = encodeTime;
   exports.decode = decode;
+  exports.decodeTime = decodeTime;
 }));

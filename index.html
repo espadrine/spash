@@ -46,7 +46,7 @@ html { max-width: 12cm; margin: auto; }
   var digits = 11;
   var setGeoloc = function(geo) {
     geoloc = geo;
-    var sh = spash.encode(geo, digits);
+    var sh = spash.encode(geo, digits, 6);
     spashNode.value = sh.hash;
     showGeoloc();
     accuracyWarnings(sh, geo);
@@ -61,6 +61,7 @@ html { max-width: 12cm; margin: auto; }
         accuracy: 2,
         altitudeAccuracy: 1e-9,
       },
+      timestamp: Date.now(),
     };
     setGeoloc(defaultGeo);
   };
@@ -72,9 +73,10 @@ html { max-width: 12cm; margin: auto; }
 
   var showGeoloc = function() {
     geolocNode.innerHTML = [
-      'Latitude: ' + geoloc.coords.latitude,
-      'Longitude: ' + geoloc.coords.longitude,
-      'Altitude: ' + geoloc.coords.altitude,
+      'Latitude: ' + geoloc.coords.latitude + '°',
+      'Longitude: ' + geoloc.coords.longitude + '°',
+      'Altitude: ' + geoloc.coords.altitude + ' metres',
+      'Time: ' + (geoloc.timestamp / 1000) + ' seconds since Unix Epoch',
     ].join('<br>');
   };
 
@@ -83,6 +85,7 @@ html { max-width: 12cm; margin: auto; }
       '± ' + spash.latError + ' meters (latitude)',
       '± ' + spash.longError + ' meters (longitude)',
       '± ' + spash.altError + ' meters (altitude)',
+      '± ' + spash.timeError + ' seconds (time)',
     ];
     precisionNode.innerHTML = accuracies.join('<br>');
 

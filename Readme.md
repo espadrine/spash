@@ -1,10 +1,10 @@
-# Spash: Spacial Hash
+# Spash: Spacetime Hash
 
 Maps every location in the observable universe to a string of the form:
 
-    <Origin>.<Hash>
+    <Origin>.<Hash>[.<TimeHash>]
 
-(Example: `E.6BLH4goVfxs`.)
+(Example: `E.6BLH4goVfxs.oL9-D4`.)
 
 - Origin: IAU designation of a celestial object, percent-encoded as per reg-name
   syntax in [RFC 3986][]; eg. `E` for Earth.
@@ -12,8 +12,13 @@ Maps every location in the observable universe to a string of the form:
   celestial object. With 12 characters, you can encode the precise position of a
   single human in the ISS. With 11, the position of a room anywhere in the
   world.
+- TimeHash: encoding of a [TCG][]-backed timestamp: the number of seconds since
+  the Unix Epoch at the centre of the celestial object if that object was not
+  there to cause gravitational time dilation. With 6 characters, you get
+  secondwise precision. It is optional.
 
 [RFC 3986]: https://tools.ietf.org/html/rfc3986
+[TCG]: https://en.wikipedia.org/wiki/Geocentric_Coordinate_Time
 
 The hash is an unpadded [base64url][] string. Each character encodes 6 bits. Two of
 them contribute to longitude, two to latitude, two to altitude. They alternate
@@ -62,6 +67,28 @@ kilometers.
 
 The center point of the spash should be defined as the point at the center of
 the error ranges of the latitude, longitude and altitude that were decoded.
+
+# TimeHash
+
+Extract the time bits. It encodes an adjustment compared
+to the Unix Epoch ([ISO 8601][] `1970-01-01T00:00:00Z`) in seconds at the
+center of the celestial object, assuming the tracking of time is unaffected by
+gravitational time dilation.
+
+[ISO 8601]: https://en.wikipedia.org/wiki/ISO_8601
+
+The minimum time is minus infinity, and the maximum time is infinity.
+That allows encoding any time with arbitrary precision.
+
+Similarly to what happens with latitude and longitude information, each bit
+determines whether the intended value is above / on (1) or below (0) the
+previously defined range, starting with a range from -1 to 1. The error range
+for the altitude goes from `asig(lower bound)` to `asig(upper bound)`, in
+TimeHashPeriod, a new unit defined as 0xffffffff (4294967295) seconds (which is
+roughly 136 years).
+
+The center point of the TimeHash should be defined as the point at the center of
+the error range of the time that was decoded.
 
 # Pros and Cons
 
