@@ -32,6 +32,7 @@ html { max-width: 12cm; margin: auto; }
   <input type=button id=addDigitNode value='+'>
   <input type=button id=rmDigitNode value='-'>
   <input type=button id=editNode value='Edit'>
+  <label><input type=checkbox id=showTimeNode> Show time</label>
 </section>
 <p id=geolocNode></p>
 <p id=precisionNode></p>
@@ -43,11 +44,14 @@ html { max-width: 12cm; margin: auto; }
 <script src=./spash.js></script>
 <script>
   var geoloc;
+  var showTimeHash = false;
   var digits = 11;
   var setGeoloc = function(geo) {
     geoloc = geo;
     var sh = spash.encode(geo, digits, 6);
-    spashNode.value = sh.hash;
+    var hash = sh.iau + '.' + sh.geolocHash;
+    if (showTimeHash) { hash += '.' + sh.timeHash; }
+    spashNode.value = hash;
     showGeoloc();
     accuracyWarnings(sh, geo);
   };
@@ -72,27 +76,34 @@ html { max-width: 12cm; margin: auto; }
   });
 
   var showGeoloc = function() {
-    geolocNode.innerHTML = [
+    var values = [
       'Latitude: ' + geoloc.coords.latitude + '°',
       'Longitude: ' + geoloc.coords.longitude + '°',
       'Altitude: ' + geoloc.coords.altitude + ' metres',
-      'Time: ' + (geoloc.timestamp / 1000) + ' seconds since Unix Epoch',
-    ].join('<br>');
+    ];
+    if (showTimeHash) {
+      values.push('Time: ' + (geoloc.timestamp / 1000)
+        + ' seconds since Unix Epoch');
+    }
+    geolocNode.innerHTML = values.join('<br>');
   };
 
   var accuracyWarnings = function(spash, geo) {
     var accuracies = [
-      '± ' + spash.latError + ' meters (latitude)',
-      '± ' + spash.longError + ' meters (longitude)',
-      '± ' + spash.altError + ' meters (altitude)',
-      '± ' + spash.timeError + ' seconds (time)',
+      '± ' + spash.earthLatError + ' metres (latitude)',
+      '± ' + spash.earthLongError + ' metres (longitude)',
+      '± ' + spash.altError + ' metres (altitude)',
     ];
+    if (showTimeHash) {
+      accuracies.push('± ' + spash.timeError + ' seconds (time)');
+    }
     precisionNode.innerHTML = accuracies.join('<br>');
 
     var geoAccuracy = geo.coords.accuracy || Infinity;  // meters
     var altAccuracy = (geo.coords.altitudeAccuracy) || Infinity;
     var warn = [];
-    if (geoAccuracy > spash.longError || geoAccuracy > spash.latError) {
+    if (geoAccuracy > spash.earthLongError ||
+        geoAccuracy > spash.earthLatError) {
       warn.push('Geographic coordinates are not accurate enough for this level of precision.');
     }
     if (geo.coords.altitudeAccuracy === null) {
@@ -117,7 +128,12 @@ html { max-width: 12cm; margin: auto; }
     var newSpash = prompt('Enter a spash.');
     setGeoloc(spash.decode(newSpash));
   };
+  var showTimeChanged = function(event) {
+    showTimeHash = event.target.checked;
+    setGeoloc(geoloc);
+  };
   addDigitNode.addEventListener('click', addDigit);
   rmDigitNode.addEventListener('click', rmDigit);
   editNode.addEventListener('click', edit);
+  showTimeNode.addEventListener('change', showTimeChanged);
 </script>

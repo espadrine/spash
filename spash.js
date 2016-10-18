@@ -11,6 +11,222 @@
   }
 }(this, function (exports) {
 
+  // Take geolocation information as `geo`:
+  // - coords:
+  //   - latitude in degrees
+  //   - longitude in degrees
+  //   - altitude in metres
+  // - timestamp in milliseconds since the Unix Epoch ignoring leap seconds
+  // `nchar` is the number of characters for the geoloc hash.
+  // `timeNchar` is the number of characters for the TimeHash.
+  // Return an object:
+  // - hash: full spash
+  // - geolocHash: geolocation hash,
+  // - timeHash: TimeHash,
+  // - iau: percent-encoded IAU identifier for the celestial object
+  // - latError: latitude error in degrees, assuming Earth
+  // - longError: longitude error in degrees, assuming Earth
+  // - earthLatError: latitude error in metres, assuming Earth
+  // - earthLongError: longitude error in metres, assuming Earth
+  // - altError: altitude error in metres
+  // - timeError: time error in seconds
+  var encode = function(geo, nchar, timeNchar) {
+    timeNchar = timeNchar || nchar;
+    var geoloc = encodeGeoloc(geo.coords, nchar);
+    var time = encodeTime(geo.timestamp / 1000, timeNchar);
+    var celestialObj = 'E';  // FIXME: detect planet.
+
+    return {
+      hash: celestialObj + '.' + geoloc.hash + '.' + time.hash,
+      geolocHash: geoloc.hash,
+      timeHash: time.hash,
+      iau: celestialObj,
+      latError: geoloc.latError,
+      longError: geoloc.longError,
+      earthLatError: geoloc.earthLatError,
+      earthLongError: geoloc.earthLongError,
+      altError: geoloc.altError,
+      timeError: time.error,
+    };
+  };
+
+  // Take {latitude, longitude, altitude} information in degrees and metre.
+  // Return {hash, latError, longError, earthLatError, earthLongError, altError}
+  var encodeGeoloc = function(coords, nchar) {
+    var lat = coords.latitude;  // degree
+    var long = coords.longitude;  // degree
+    var alt = coords.altitude || 0;  // metres
+    var sigalt = sigmoid(alt / 1e3);  // km
+
+    // Each character is a 6-bit number.
+    nchar = +nchar;
+    var latBitsLen = nchar * 2, longBitsLen = nchar * 2, altBitsLen = nchar * 2;
+    var latBits = new Array(latBitsLen);
+    var longBits = new Array(longBitsLen);
+    var altBits = new Array(altBitsLen);
+
+    // Generate bits for longitude, latitude, altitude.
+    var latRange = bisect(lat, -90, 90, latBits, latBitsLen);
+    var longRange = bisect(long, -180, 180, longBits, longBitsLen);
+    var altRange = bisect(sigalt, -1, 1, altBits, altBitsLen);
+    var latErr = (latRange[1] - latRange[0]) / 2;
+    var longErr = (longRange[1] - longRange[0]) / 2;
+    var altErr = (asig(altRange[1]) - asig(altRange[0])) / 2 * 1e3;  // metres
+
+    // Order bits.
+    var bitsLen = nchar * 6;
+    var bits = new Array(bitsLen);
+    for (var i = 0, longi = 0, lati = 0, alti = 0; i < bitsLen; i++) {
+      if (i % 3 === 0) {
+        bits[i] = longBits[longi++];
+      } else if (i % 3 === 1) {
+        bits[i] = latBits[lati++];
+      } else {
+        bits[i] = altBits[alti++];
+      }
+    }
+
+    // Convert bits to integers.
+    var ints = new Array(nchar);
+    for (var i = 0; i < bitsLen; i += 6) {
+      ints[(i / 6) >>> 0] = (bits[i] << 5) + (bits[i + 1] << 4) + (bits[i + 2] << 3) +
+                        (bits[i + 3] << 2) + (bits[i + 4] << 1) + (bits[i + 5]);
+    }
+
+    // Convert integers to characters.
+    var hash = '';
+    for (var i = 0; i < nchar; i++) {
+      hash += base64url[ints[i]];
+    }
+
+    return {
+      hash: hash,
+      latError: latErr,
+      longError: longErr,
+      earthLatError: latitudeMeterError(latErr, earthRadius + alt),
+      earthLongError: longitudeMeterError(longErr, earthRadius + alt, lat),
+      altError: altErr,
+    };
+  };
+
+  // Take a Unix timestamp. Return a time hash.
+  var encodeTime = function(utc, nchar) {
+    var time = tcgFromUtc(utc);
+    var sigtime = sigmoid(time / timeHashPeriod);
+
+    // Each character is a 6-bit number.
+    nchar = +nchar;
+    var bitsLen = nchar * 6;
+    var bits = new Array(bitsLen);
+
+    // Generate bits for longitude, latitude, altitude.
+    var range = bisect(sigtime, -1, 1, bits, bitsLen);
+    var err = (asig(range[1]) - asig(range[0])) / 2
+      * timeHashPeriod;
+
+    // Convert bits to integers.
+    var ints = new Array(nchar);
+    for (var i = 0; i < bitsLen; i += 6) {
+      ints[(i / 6) >>> 0] = (bits[i] << 5) + (bits[i + 1] << 4) + (bits[i + 2] << 3) +
+                        (bits[i + 3] << 2) + (bits[i + 4] << 1) + (bits[i + 5]);
+    }
+
+    // Convert integers to characters.
+    var hash = '';
+    for (var i = 0; i < nchar; i++) {
+      hash += base64url[ints[i]];
+    }
+
+    return {hash: hash, error: err}
+  };
+
+  // {coords: {latitude, longitude, altitude}, timestamp in seconds}
+  var decode = function(spash) {
+    var parts = spash.split('.');
+    // FIXME: detect planet.
+    var location = parts[1];
+    var time = parts[2];  // optional
+
+    var coords = decodeGeoloc(location);
+    if (time !== undefined) {
+      var timestamp = decodeTime(time);
+    } else {
+      var timestamp = unixTimestampMs();
+    }
+
+    return {
+      coords: coords,
+      timestamp: timestamp,
+    };
+  };
+
+  // location: String of the form "ek0uvhuQ4AA".
+  // Return an array of bits.
+  var decodeGeoloc = function(location) {
+    // Convert characters to integers.
+    var ints = new Array(location.length);
+    for (var i = 0; i < location.length; i++) {
+      ints[i] = base64urlChar[location[i]];
+    }
+
+    // Convert integers to bits.
+    var intsLen = ints.length;
+    var locBitsLen = intsLen * 2;
+    var latBits = new Array(locBitsLen);
+    var longBits = new Array(locBitsLen);
+    var altBits = new Array(locBitsLen);
+    for (var i = 0; i < intsLen; i++) {
+      var double = i * 2;
+      longBits[double + 0] = (ints[i] & 32) >> 5;
+      latBits [double + 0] = (ints[i] & 16) >> 4;
+      altBits [double + 0] = (ints[i] & 8)  >> 3;
+      longBits[double + 1] = (ints[i] & 4)  >> 2;
+      latBits [double + 1] = (ints[i] & 2)  >> 1;
+      altBits [double + 1] = (ints[i] & 1)  >> 0;
+    }
+
+    // Extract longitude, latitude, altitude.
+    var lat = rbisect(-90, 90, latBits, locBitsLen);
+    var long = rbisect(-180, 180, longBits, locBitsLen);
+    var sigalt = rbisect(-1, 1, altBits, locBitsLen);
+    var alt = asig(sigalt) * 1e3;  // metres
+
+    return {
+      latitude: lat,
+      longitude: long,
+      altitude: alt,
+    };
+  };
+
+  // Take something of the form "ek0", return a Unix timestamp in milliseconds.
+  var decodeTime = function(time) {
+    // Convert characters to integers.
+    var ints = new Array(time.length);
+    for (var i = 0; i < time.length; i++) {
+      ints[i] = base64urlChar[time[i]];
+    }
+
+    // Convert integers to bits.
+    var intsLen = ints.length;
+    var bitsLen = intsLen * 6;
+    var bits = new Array(bitsLen);
+    for (var i = 0, j = 0; i < intsLen; i++, j += 6) {
+      bits[j + 0] = (ints[i] & 32) >> 5;
+      bits[j + 1] = (ints[i] & 16) >> 4;
+      bits[j + 2] = (ints[i] & 8)  >> 3;
+      bits[j + 3] = (ints[i] & 4)  >> 2;
+      bits[j + 4] = (ints[i] & 2)  >> 1;
+      bits[j + 5] = (ints[i] & 1)  >> 0;
+    }
+
+    var sigtime = rbisect(-1, 1, bits, bitsLen);
+    // Timestamp in TCG time.
+    var timestampTcg = asig(sigtime) * timeHashPeriod;
+    return utcFromTcg(timestampTcg) * 1000;
+  };
+
+  // Fundamental primitives are here.
+
   var base64url = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   var base64urlChar = Object.create(null);
   (function() {
@@ -75,149 +291,7 @@
     return target;
   };
 
-  // Take {latitude, longitude, altitude} information in degrees and metre.
-  // Return a geoloc hash.
-  var encodeGeoloc = function(coords, nchar) {
-    var lat = coords.latitude;  // degree
-    var long = coords.longitude;  // degree
-    var alt = coords.altitude || 0;  // metres
-    var sigalt = sigmoid(alt / 1e3);  // km
-
-    // Each character is a 6-bit number.
-    nchar = +nchar;
-    var latBitsLen = nchar * 2, longBitsLen = nchar * 2, altBitsLen = nchar * 2;
-    var latBits = new Array(latBitsLen);
-    var longBits = new Array(longBitsLen);
-    var altBits = new Array(altBitsLen);
-
-    // Generate bits for longitude, latitude, altitude.
-    var latRange = bisect(lat, -90, 90, latBits, latBitsLen);
-    var longRange = bisect(long, -180, 180, longBits, longBitsLen);
-    var altRange = bisect(sigalt, -1, 1, altBits, altBitsLen);
-    var latErr = (latRange[1] - latRange[0]) / 2;
-    var longErr = (longRange[1] - longRange[0]) / 2;
-    var altErr = (asig(altRange[1]) - asig(altRange[0])) / 2 * 1e3;  // metres
-
-    // Order bits.
-    var bitsLen = nchar * 6;
-    var bits = new Array(bitsLen);
-    for (var i = 0, longi = 0, lati = 0, alti = 0; i < bitsLen; i++) {
-      if (i % 3 === 0) {
-        bits[i] = longBits[longi++];
-      } else if (i % 3 === 1) {
-        bits[i] = latBits[lati++];
-      } else {
-        bits[i] = altBits[alti++];
-      }
-    }
-
-    // Convert bits to integers.
-    var ints = new Array(nchar);
-    for (var i = 0; i < bitsLen; i += 6) {
-      ints[(i / 6) >>> 0] = (bits[i] << 5) + (bits[i + 1] << 4) + (bits[i + 2] << 3) +
-                        (bits[i + 3] << 2) + (bits[i + 4] << 1) + (bits[i + 5]);
-    }
-
-    // Convert integers to characters.
-    var hash = '';
-    for (var i = 0; i < nchar; i++) {
-      hash += base64url[ints[i]];
-    }
-
-    return {
-      hash: hash,
-      latError: latitudeMeterError(latErr, earthRadius + alt),
-      longError: longitudeMeterError(longErr, earthRadius + alt, lat),
-      altError: altErr,
-    };
-  };
-
-  // Take a Unix timestamp. Return a time hash.
-  var encodeTime = function(utc, nchar) {
-    var time = tcgFromUtc(utc);
-    var sigtime = sigmoid(time / timeHashPeriod);
-
-    // Each character is a 6-bit number.
-    nchar = +nchar;
-    var bitsLen = nchar * 6;
-    var bits = new Array(bitsLen);
-
-    // Generate bits for longitude, latitude, altitude.
-    var range = bisect(sigtime, -1, 1, bits, bitsLen);
-    var err = (asig(range[1]) - asig(range[0])) / 2
-      * timeHashPeriod;
-
-    // Convert bits to integers.
-    var ints = new Array(nchar);
-    for (var i = 0; i < bitsLen; i += 6) {
-      ints[(i / 6) >>> 0] = (bits[i] << 5) + (bits[i + 1] << 4) + (bits[i + 2] << 3) +
-                        (bits[i + 3] << 2) + (bits[i + 4] << 1) + (bits[i + 5]);
-    }
-
-    // Convert integers to characters.
-    var hash = '';
-    for (var i = 0; i < nchar; i++) {
-      hash += base64url[ints[i]];
-    }
-
-    return {hash: hash, error: err}
-  };
-
-  var encode = function(geo, nchar, timeNchar) {
-    timeNchar = timeNchar || nchar;
-    var geoloc = encodeGeoloc(geo.coords, nchar);
-    var time = encodeTime(geo.timestamp / 1000, timeNchar);
-    var celestialObj = 'E';  // FIXME: detect planet.
-
-    return {
-      hash: celestialObj + '.' + geoloc.hash + '.' + time.hash,
-      geolocHash: geoloc.hash,
-      timeHash: time.hash,
-      iau: celestialObj,
-      latError: geoloc.latError,
-      longError: geoloc.longError,
-      altError: geoloc.altError,
-      timeError: time.error,
-    };
-  };
-
-  // location: String of the form "ek0uvhuQ4AA".
-  // Return an array of bits.
-  var decodeGeoloc = function(location) {
-    // Convert characters to integers.
-    var ints = new Array(location.length);
-    for (var i = 0; i < location.length; i++) {
-      ints[i] = base64urlChar[location[i]];
-    }
-
-    // Convert integers to bits.
-    var intsLen = ints.length;
-    var locBitsLen = intsLen * 2;
-    var latBits = new Array(locBitsLen);
-    var longBits = new Array(locBitsLen);
-    var altBits = new Array(locBitsLen);
-    for (var i = 0; i < intsLen; i++) {
-      var double = i * 2;
-      longBits[double + 0] = (ints[i] & 32) >> 5;
-      latBits [double + 0] = (ints[i] & 16) >> 4;
-      altBits [double + 0] = (ints[i] & 8)  >> 3;
-      longBits[double + 1] = (ints[i] & 4)  >> 2;
-      latBits [double + 1] = (ints[i] & 2)  >> 1;
-      altBits [double + 1] = (ints[i] & 1)  >> 0;
-    }
-
-    // Extract longitude, latitude, altitude.
-    var lat = rbisect(-90, 90, latBits, locBitsLen);
-    var long = rbisect(-180, 180, longBits, locBitsLen);
-    var sigalt = rbisect(-1, 1, altBits, locBitsLen);
-    var alt = asig(sigalt) * 1e3;  // metres
-
-    return {
-      latitude: lat,
-      longitude: long,
-      altitude: alt,
-    };
-  };
+  // Time-related primitives are here.
 
   var timeHashPeriod = 0xffffffff;  // 2^32-1 sec, ~136 years
 
@@ -283,53 +357,6 @@
     var daysSinceTaiCorrection = (tt - julianTcgTaiCorrection) / 24 / 3600;
     var tcg = tt + LG * daysSinceTaiCorrection * 86400;
     return tcg;
-  };
-
-  // Take something of the form "ek0", return a Unix timestamp in milliseconds.
-  var decodeTime = function(time) {
-    // Convert characters to integers.
-    var ints = new Array(time.length);
-    for (var i = 0; i < time.length; i++) {
-      ints[i] = base64urlChar[time[i]];
-    }
-
-    // Convert integers to bits.
-    var intsLen = ints.length;
-    var bitsLen = intsLen * 6;
-    var bits = new Array(bitsLen);
-    for (var i = 0, j = 0; i < intsLen; i++, j += 6) {
-      bits[j + 0] = (ints[i] & 32) >> 5;
-      bits[j + 1] = (ints[i] & 16) >> 4;
-      bits[j + 2] = (ints[i] & 8)  >> 3;
-      bits[j + 3] = (ints[i] & 4)  >> 2;
-      bits[j + 4] = (ints[i] & 2)  >> 1;
-      bits[j + 5] = (ints[i] & 1)  >> 0;
-    }
-
-    var sigtime = rbisect(-1, 1, bits, bitsLen);
-    // Timestamp in TCG time.
-    var timestampTcg = asig(sigtime) * timeHashPeriod;
-    return utcFromTcg(timestampTcg) * 1000;
-  };
-
-  // {coords: {latitude, longitude, altitude}, timestamp in seconds}
-  var decode = function(spash) {
-    var parts = spash.split('.');
-    // FIXME: detect planet.
-    var location = parts[1];
-    var time = parts[2];  // optional
-
-    var coords = decodeGeoloc(location);
-    if (time !== undefined) {
-      var timestamp = decodeTime(time);
-    } else {
-      var timestamp = unixTimestampMs();
-    }
-
-    return {
-      coords: coords,
-      timestamp: timestamp,
-    };
   };
 
   exports.encode = encode;
