@@ -1,7 +1,6 @@
 <!doctype html><meta charset=utf-8><title> Spacetime Locator </title>
 <style>
 html { max-width: 12cm; margin: auto; }
-#noGeolocNode { display: none; }
 .centered { text-align: center; font-weight: bold; font-family: monospace; }
 .logo { position: relative; top: 5px; }
 #spashNode { font-size: 3em; }
@@ -28,7 +27,7 @@ html { max-width: 12cm; margin: auto; }
   identifier:
 </p>
 <section class=centered>
-  <output id=spashNode>Computing…</output><br>
+  <output id=spashNode>E.ek0uvhuQQ1q</output><br>
   <input type=button id=addDigitNode value='+'>
   <input type=button id=rmDigitNode value='-'>
   <input type=button id=editNode value='Edit'>
@@ -55,6 +54,10 @@ html { max-width: 12cm; margin: auto; }
     showGeoloc();
     accuracyWarnings(sh, geo);
   };
+  var gotGeoloc = function(geo) {
+    noGeolocNode.style.display = 'none';
+    setGeoloc(geo);
+  };
   var noGeolocWarning = function() {
     noGeolocNode.style.display = 'block';
     var defaultGeo = {
@@ -69,7 +72,7 @@ html { max-width: 12cm; margin: auto; }
     };
     setGeoloc(defaultGeo);
   };
-  navigator.geolocation.getCurrentPosition(setGeoloc, noGeolocWarning, {
+  navigator.geolocation.getCurrentPosition(gotGeoloc, noGeolocWarning, {
     enableHighAccuracy: true,
     timeout: 25000,
     maximumAge: 0
@@ -82,8 +85,7 @@ html { max-width: 12cm; margin: auto; }
       'Altitude: ' + geoloc.coords.altitude + ' metres',
     ];
     if (showTimeHash) {
-      values.push('Time: ' + (geoloc.timestamp / 1000)
-        + ' seconds since Unix Epoch');
+      values.push('Time: ' + new Date(geoloc.timestamp).toISOString());
     }
     geolocNode.innerHTML = values.join('<br>');
   };
