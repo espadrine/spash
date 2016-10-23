@@ -4,6 +4,7 @@ html { max-width: 12cm; margin: auto; }
 .centered { text-align: center; font-weight: bold; font-family: monospace; }
 .logo { position: relative; top: 5px; }
 #spashNode { font-size: 3em; }
+#googleMapNode { height: 400px; width: 100%; margin-top: 15px; display: none; }
 </style>
 <h1> Spash: Spacetime Locator </h1>
 
@@ -32,7 +33,9 @@ html { max-width: 12cm; margin: auto; }
   <input type=button id=rmDigitNode value='-'>
   <input type=button id=editNode value='Edit'>
   <label><input type=checkbox id=showTimeNode> Show time</label>
+  <label><input type=checkbox id=showMapNode> Show map</label>
 </section>
+<div id=googleMapNode></div>
 <p id=geolocNode></p>
 <p id=precisionNode></p>
 <p id=noGeolocNode>
@@ -41,7 +44,7 @@ html { max-width: 12cm; margin: auto; }
 <p id=warningsNode></p>
 <footer>
   <p>
-    Built by <a href=https://twitter.com/espadrine>Thaddée Tyl.</a>
+    Built by <a href=https://twitter.com/espadrine>Thaddée Tyl</a>.
     Full <a href=https://github.com/espadrine/spash/blob/master/Readme.md>
       specification</a>.
   </p>
@@ -49,17 +52,26 @@ html { max-width: 12cm; margin: auto; }
 
 <script src=./spash.js></script>
 <script>
-  var geoloc;
-  var showTimeHash = false;
+  var geoloc = {
+    coords: {
+      latitude: 51.5221656,
+      longitude: -0.1086239,
+      altitude: 22.725,
+      accuracy: 2,
+      altitudeAccuracy: 1e-9,
+    },
+    timestamp: Date.now(),
+  };
+  var geoSpash;
   var digits = 11;
   var setGeoloc = function(geo) {
     geoloc = geo;
-    var sh = spash.encode(geo, digits, 6);
-    var hash = sh.iau + '.' + sh.geolocHash;
-    if (showTimeHash) { hash += '.' + sh.timeHash; }
+    geoSpash = spash.encode(geo, digits, 6);
+    var hash = geoSpash.iau + '.' + geoSpash.geolocHash;
+    if (showTimeHash) { hash += '.' + geoSpash.timeHash; }
     spashNode.value = hash;
     showGeoloc();
-    accuracyWarnings(sh, geo);
+    accuracyWarnings(geoSpash, geo);
   };
   var gotGeoloc = function(geo) {
     noGeolocNode.style.display = 'none';
@@ -67,17 +79,7 @@ html { max-width: 12cm; margin: auto; }
   };
   var noGeolocWarning = function() {
     noGeolocNode.style.display = 'block';
-    var defaultGeo = {
-      coords: {
-        latitude: 51.5221656,
-        longitude: -0.1086239,
-        altitude: 22.725,
-        accuracy: 2,
-        altitudeAccuracy: 1e-9,
-      },
-      timestamp: Date.now(),
-    };
-    setGeoloc(defaultGeo);
+    setGeoloc(geoloc);
   };
   navigator.geolocation.getCurrentPosition(gotGeoloc, noGeolocWarning, {
     enableHighAccuracy: true,
@@ -97,27 +99,27 @@ html { max-width: 12cm; margin: auto; }
     geolocNode.innerHTML = values.join('<br>');
   };
 
-  var accuracyWarnings = function(spash, geo) {
+  var accuracyWarnings = function(geoSpash, geo) {
     var accuracies = [
-      '± ' + spash.earthLatError + ' metres (latitude)',
-      '± ' + spash.earthLongError + ' metres (longitude)',
-      '± ' + spash.altError + ' metres (altitude)',
+      '± ' + geoSpash.earthLatError + ' metres (latitude)',
+      '± ' + geoSpash.earthLongError + ' metres (longitude)',
+      '± ' + geoSpash.altError + ' metres (altitude)',
     ];
     if (showTimeHash) {
-      accuracies.push('± ' + spash.timeError + ' seconds (time)');
+      accuracies.push('± ' + geoSpash.timeError + ' seconds (time)');
     }
     precisionNode.innerHTML = accuracies.join('<br>');
 
     var geoAccuracy = geo.coords.accuracy || Infinity;  // meters
     var altAccuracy = (geo.coords.altitudeAccuracy) || Infinity;
     var warn = [];
-    if (geoAccuracy > spash.earthLongError ||
-        geoAccuracy > spash.earthLatError) {
+    if (geoAccuracy > geoSpash.earthLongError ||
+        geoAccuracy > geoSpash.earthLatError) {
       warn.push('Geographic coordinates are not accurate enough for this level of precision.');
     }
     if (geo.coords.altitudeAccuracy === null) {
       warn.push('Altitude measurement unavailable; using sea level.');
-    } else if (altAccuracy > spash.altError) {
+    } else if (altAccuracy > geoSpash.altError) {
       warn.push('Altitude measurement is not accurate enough for this level of precision.');
     }
 
@@ -127,22 +129,86 @@ html { max-width: 12cm; margin: auto; }
   var addDigit = function(event) {
     digits++;
     setGeoloc(geoloc);
+    setMapCenter(geoloc);
   };
   var rmDigit = function(event) {
     if (digits <= 0) { return; }
     digits--;
     setGeoloc(geoloc);
+    setMapCenter(geoloc);
   };
   var edit = function(event) {
     var newSpash = prompt('Enter a spash.');
     setGeoloc(spash.decode(newSpash));
+    setMapCenter(geoloc);
   };
+  var showTimeHash = false;
   var showTimeChanged = function(event) {
     showTimeHash = event.target.checked;
     setGeoloc(geoloc);
+  };
+  var showMap = false;
+  var showMapChanged = function(event) {
+    showMap = event.target.checked;
+    if (showMap) {
+      loadMapLibrary();
+      googleMapNode.style.display = 'block';
+    } else {
+      googleMapNode.style.display = 'none';
+    }
   };
   addDigitNode.addEventListener('click', addDigit);
   rmDigitNode.addEventListener('click', rmDigit);
   editNode.addEventListener('click', edit);
   showTimeNode.addEventListener('change', showTimeChanged);
+  showMapNode.addEventListener('change', showMapChanged);
+
+  // Google Map
+  var googleMap, googleMapMarker;
+  var getZoomFromDigits = function(digits) {
+    return Math.floor(digits * 19 / 11);
+  };
+  var setMapCenter = function(geoloc) {
+    if (!googleMap) { return; }
+    var latLng = {
+      lat: geoloc.coords.latitude,
+      lng: geoloc.coords.longitude,
+    };
+    googleMap.setCenter(latLng);
+    var zoom = getZoomFromDigits(digits);
+    googleMap.setZoom(zoom);
+    googleMapMarker.setPosition(latLng);
+  };
+  var geolocAtFetchedElevation = geoloc;
+  var setSpashFromMapCenter = function() {
+    if (!googleMap) { return; }
+    var center = googleMap.getCenter();
+    var latLng = {lat: center.lat(), lng: center.lng()};
+    geoloc.coords.latitude = latLng.lat;
+    geoloc.coords.longitude = latLng.lng;
+    setGeoloc(geoloc);
+    setGeoloc(spash.decode(geoSpash.hash));
+
+    latLng = {
+      lat: geoloc.coords.latitude,
+      lng: geoloc.coords.longitude,
+    };
+    googleMapMarker.setPosition(latLng);
+  };
+  var initMap = function() {
+    googleMap = new google.maps.Map(googleMapNode);
+    googleMapMarker = new google.maps.Marker({map: googleMap});
+    googleMap.addListener('center_changed', setSpashFromMapCenter);
+    setMapCenter(geoloc);
+  }
+  var mapLibraryLoaded = false;
+  var loadMapLibrary = function() {
+    if (mapLibraryLoaded) { return; }
+    mapLibraryLoaded = true;
+    var script = document.createElement('script');
+    script.async = true;
+    script.defer = true;
+    script.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB7tgHIP7-P8j_nV1W1ahUdXcXwB1fK18c&callback=initMap";
+    document.body.appendChild(script);
+  };
 </script>
