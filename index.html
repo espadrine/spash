@@ -139,13 +139,26 @@ html { max-width: 12cm; margin: auto; }
   };
   var edit = function(event) {
     var newSpash = prompt('Enter a spash.');
-    setGeoloc(spash.decode(newSpash));
+    try {
+      var newGeo = spash.decode(newSpash);
+    } catch (e) {
+      alert('Invalid Spash');
+      return;
+    }
+    var parts = newSpash.split('.');
+    digits = parts[1].length;
+    setShowTimeHash(!!parts[2]);
+    setGeoloc(newGeo);
     setMapCenter(geoloc);
   };
   var showTimeHash = false;
-  var showTimeChanged = function(event) {
-    showTimeHash = event.target.checked;
+  var setShowTimeHash = function(show) {
+    showTimeHash = show;
+    showTimeNode.checked = show;
     setGeoloc(geoloc);
+  };
+  var showTimeChanged = function(event) {
+    setShowTimeHash(event.target.checked);
   };
   var showMap = false;
   var showMapChanged = function(event) {
