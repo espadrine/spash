@@ -87,8 +87,13 @@ html { max-width: 12cm; margin: auto; }
     maximumAge: 0
   });
 
+  var mapLink = function(geoloc, digits) {
+    return "https://www.google.fr/maps/@" + geoloc.coords.latitude +
+      "," + geoloc.coords.longitude + "," + getZoomFromDigits(digits) + "z";
+  };
   var showGeoloc = function() {
     var values = [
+      '<a href ="' + mapLink(geoloc, digits) + '">Map</a>',
       'Latitude: ' + geoloc.coords.latitude + '°',
       'Longitude: ' + geoloc.coords.longitude + '°',
       'Altitude: ' + geoloc.coords.altitude + ' metres',
