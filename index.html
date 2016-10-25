@@ -3,6 +3,7 @@
 html { max-width: 12cm; margin: auto; }
 .centered { text-align: center; font-weight: bold; font-family: monospace; }
 .logo { position: relative; top: 5px; }
+.clickable { cursor: pointer; }
 #spashNode { font-size: 3em; }
 #googleMapNode { height: 400px; width: 100%; margin-top: 15px; display: none; }
 </style>
@@ -93,13 +94,20 @@ html { max-width: 12cm; margin: auto; }
   };
   var showGeoloc = function() {
     var values = [
-      '<a href ="' + mapLink(geoloc, digits) + '">Map</a>',
-      'Latitude: ' + geoloc.coords.latitude + '°',
-      'Longitude: ' + geoloc.coords.longitude + '°',
-      'Altitude: ' + geoloc.coords.altitude + ' metres',
+      '<a href="' + mapLink(geoloc, digits) + '">Map</a>',
+      '<span class="clickable" onclick="changeLatitude(event)">' +
+        'Latitude</span>: ' + geoloc.coords.latitude + '°' +
+      '</span>',
+      '<span class="clickable" onclick="changeLongitude(event)">' +
+        'Longitude</span>: ' + geoloc.coords.longitude + '°' +
+      '</span>',
+      '<span class="clickable" onclick="changeAltitude(event)">' +
+        'Altitude</span>: ' + geoloc.coords.altitude + ' metres' +
+      '</span>',
     ];
     if (showTimeHash) {
-      values.push('Time: ' + new Date(geoloc.timestamp).toISOString());
+      values.push('<span class="clickable" onclick="changeTime(event)">' +
+        'Time</span>: ' + new Date(geoloc.timestamp).toISOString());
     }
     geolocNode.innerHTML = values.join('<br>');
   };
@@ -139,6 +147,42 @@ html { max-width: 12cm; margin: auto; }
   var rmDigit = function(event) {
     if (digits <= 0) { return; }
     digits--;
+    setGeoloc(geoloc);
+    setMapCenter(geoloc);
+  };
+  var changeLatitude = function(event) {
+    var newLat = prompt('Enter a new latitude.');
+    if (newLat === null) {return;}
+    newLat = +newLat;
+    if (newLat !== newLat) {return;}
+    geoloc.coords.latitude = newLat;
+    setGeoloc(geoloc);
+    setMapCenter(geoloc);
+  };
+  var changeLongitude = function(event) {
+    var newLong = prompt('Enter a new longitude.');
+    if (newLong === null) {return;}
+    newLong = +newLong;
+    if (newLong !== newLong) {return;}
+    geoloc.coords.longitude = newLong;
+    setGeoloc(geoloc);
+    setMapCenter(geoloc);
+  };
+  var changeAltitude = function(event) {
+    var newAlt = prompt('Enter a new altitude, in metres.');
+    if (newAlt === null) {return;}
+    newAlt = +newAlt;
+    if (newAlt !== newAlt) {return;}
+    geoloc.coords.altitude = newAlt;
+    setGeoloc(geoloc);
+    setMapCenter(geoloc);
+  };
+  var changeTime = function(event) {
+    var newTime = prompt('Enter a new time, in ISO 8601.');
+    if (newTime === null) {return;}
+    newTime = +new Date(newTime);
+    if (+newTime !== newTime) {return;}
+    geoloc.timestamp = newTime;
     setGeoloc(geoloc);
     setMapCenter(geoloc);
   };
