@@ -71,6 +71,7 @@ html { max-width: 12cm; margin: auto; }
     var hash = geoSpash.iau + '.' + geoSpash.geolocHash;
     if (showTimeHash) { hash += '.' + geoSpash.timeHash; }
     spashNode.value = hash;
+    location.hash = hash;
     showGeoloc();
     accuracyWarnings(geoSpash, geo);
   };
@@ -82,11 +83,18 @@ html { max-width: 12cm; margin: auto; }
     noGeolocNode.style.display = 'block';
     setGeoloc(geoloc);
   };
-  navigator.geolocation.getCurrentPosition(gotGeoloc, noGeolocWarning, {
-    enableHighAccuracy: true,
-    timeout: 25000,
-    maximumAge: 0
-  });
+  if (!location.hash) {
+    navigator.geolocation.getCurrentPosition(gotGeoloc, noGeolocWarning, {
+      enableHighAccuracy: true,
+      timeout: 25000,
+      maximumAge: 0
+    });
+  } else {
+    // The address bar already holds a hash.
+    addEventListener('DOMContentLoaded', function() {
+      updateSpash(location.hash);
+    });
+  }
 
   var mapLink = function(geoloc, digits) {
     return "https://www.google.fr/maps/@" + geoloc.coords.latitude +
@@ -186,8 +194,7 @@ html { max-width: 12cm; margin: auto; }
     setGeoloc(geoloc);
     setMapCenter(geoloc);
   };
-  var edit = function(event) {
-    var newSpash = prompt('Enter a spash.');
+  var updateSpash = function(newSpash) {
     try {
       var newGeo = spash.decode(newSpash);
     } catch (e) {
@@ -199,6 +206,10 @@ html { max-width: 12cm; margin: auto; }
     setShowTimeHash(!!parts[2]);
     setGeoloc(newGeo);
     setMapCenter(geoloc);
+  };
+  var edit = function(event) {
+    var newSpash = prompt('Enter a spash.');
+    updateSpash(newSpash);
   };
   var showTimeHash = false;
   var setShowTimeHash = function(show) {
@@ -219,11 +230,15 @@ html { max-width: 12cm; margin: auto; }
       googleMapNode.style.display = 'none';
     }
   };
+  var hashChanged = function(event) {
+    updateSpash(location.hash);
+  };
   addDigitNode.addEventListener('click', addDigit);
   rmDigitNode.addEventListener('click', rmDigit);
   editNode.addEventListener('click', edit);
   showTimeNode.addEventListener('change', showTimeChanged);
   showMapNode.addEventListener('change', showMapChanged);
+  addEventListener('hashchange', hashChanged);
 
   // Google Map
   var googleMap, googleMapMarker;
