@@ -140,8 +140,13 @@ Implement it in your own language. Send me a tweet to your code [@espadrine][].
 
 Here is a list of known implementations:
 
+- [npm spash](https://www.npmjs.com/package/spash)
+
 ---
 
 Inspired by [Geohash][].
 
+License: [CC0][].
+
 [Geohash]: http://geohash.org
+[CC0]: https://creativecommons.org/publicdomain/zero/1.0/
