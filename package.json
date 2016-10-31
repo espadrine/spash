@@ -1,6 +1,6 @@
 {
   "name": "spash",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Universal spacetime locator. Maps every location in the observable universe to a string.",
   "main": "spash.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "altitude"
   ],
   "author": "Thaddée Tyl",
-  "license": "MIT",
+  "license": "CC0-1.0",
   "bugs": {
     "url": "https://github.com/espadrine/spash/issues"
   },
