@@ -95,7 +95,9 @@ footer { font-size: 0.9em; }
   } else {
     // The address bar already holds a hash.
     addEventListener('DOMContentLoaded', function() {
-      updateSpash(location.hash);
+      try {
+        updateSpash(location.hash);
+      } catch (e) { return; }
     });
   }
 
@@ -198,12 +200,7 @@ footer { font-size: 0.9em; }
     setMapCenter(geoloc);
   };
   var updateSpash = function(newSpash) {
-    try {
-      var newGeo = spash.decode(newSpash);
-    } catch (e) {
-      alert('Invalid Spash');
-      return;
-    }
+    var newGeo = spash.decode(newSpash);
     var parts = newSpash.split('.');
     digits = parts[1].length;
     setShowTimeHash(!!parts[2]);
@@ -212,7 +209,11 @@ footer { font-size: 0.9em; }
   };
   var edit = function(event) {
     var newSpash = prompt('Enter a spash.');
-    updateSpash(newSpash);
+    try {
+      updateSpash(newSpash);
+    } catch(e) {
+      alert('Invalid Spash');
+    }
   };
   var showTimeHash = false;
   var setShowTimeHash = function(show) {
@@ -234,7 +235,9 @@ footer { font-size: 0.9em; }
     }
   };
   var hashChanged = function(event) {
-    updateSpash(location.hash);
+    try {
+      updateSpash(location.hash);
+    } catch (e) { return; }
   };
   addDigitNode.addEventListener('click', addDigit);
   rmDigitNode.addEventListener('click', rmDigit);
