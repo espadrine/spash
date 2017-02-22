@@ -107,13 +107,13 @@ footer { font-size: 0.9em; }
     var values = [
       '<a href="' + mapLink(geoloc, digits) + '">Map</a>',
       '<span class="clickable" onclick="changeLatitude(event)">' +
-        'Latitude</span>: ' + geoloc.coords.latitude + '°' +
+        'Latitude</span>: ' + displayNumber(geoloc.coords.latitude) + '°' +
       '</span>',
       '<span class="clickable" onclick="changeLongitude(event)">' +
-        'Longitude</span>: ' + geoloc.coords.longitude + '°' +
+        'Longitude</span>: ' + displayNumber(geoloc.coords.longitude) + '°' +
       '</span>',
       '<span class="clickable" onclick="changeAltitude(event)">' +
-        'Altitude</span>: ' + geoloc.coords.altitude + ' metres' +
+        'Altitude</span>: ' + displayNumber(geoloc.coords.altitude) + ' metres' +
       '</span>',
     ];
     if (showTimeHash) {
@@ -125,9 +125,9 @@ footer { font-size: 0.9em; }
 
   var accuracyWarnings = function(geoSpash, geo) {
     var accuracies = [
-      '± ' + geoSpash.earthLatError + ' metres (latitude)',
-      '± ' + geoSpash.earthLongError + ' metres (longitude)',
-      '± ' + geoSpash.altError + ' metres (altitude)',
+      '± ' + displayNumber(geoSpash.earthLatError) + ' metres (latitude)',
+      '± ' + displayNumber(geoSpash.earthLongError) + ' metres (longitude)',
+      '± ' + displayNumber(geoSpash.altError) + ' metres (altitude)',
     ];
     if (showTimeHash) {
       accuracies.push('± ' + geoSpash.timeError + ' seconds (time)');
@@ -242,6 +242,11 @@ footer { font-size: 0.9em; }
   showTimeNode.addEventListener('change', showTimeChanged);
   showMapNode.addEventListener('change', showMapChanged);
   addEventListener('hashchange', hashChanged);
+  var displayNumber = function(num) {
+    if (num >= 1000) { return num.toFixed(0);
+    } else if (num >= 1) { return num.toFixed(2);
+    } else { return num.toPrecision(2); }
+  };
 
   // Google Map
   var googleMap, googleMapMarker;
